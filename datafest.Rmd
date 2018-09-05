@@ -1,0 +1,153 @@
+---
+title: "datathon"
+author: "krishna"
+date: "22 May 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(randomForest)
+library(ggplot2)
+library(dplyr)
+library(VIM)
+library(mice)
+library(rattle)
+library(caret)
+library(tree)
+library(pROC)
+tr=read.csv("C:\\Users\\Administrator\\Desktop\\hacka\\train_HK6lq50.csv")
+te1=read.csv("C:\\Users\\Administrator\\Desktop\\hacka\\test_2nAIblo.csv")
+```
+
+### finding missing values in the train dataset
+```{r}
+colSums(is.na(tr))
+```
+
+### finding missing values in the test data set
+```{r}
+colSums(is.na(te1))
+```
+
+
+### missing value imputation in train and test data set
+```{r}
+te=te1
+
+
+a=tr %>% group_by(education,difficulty_level,trainee_engagement_rating) %>% summarise(t=n())
+
+z=a %>%
+  arrange_(~ desc(t)) %>%
+  group_by_(~ education) %>%
+  top_n(n =5)
+
+
+
+##### imputing missing age value with the mean of age ######
+
+tr$age=ifelse(is.na(tr$age),36,tr$age)
+te$age=ifelse(is.na(te$age),36,te$age)
+
+```
+
+
+```{r}
+
+########### Feature Engineering #########
+
+tr$trainee_engagement_rating=ifelse(is.na(tr$trainee_engagement_rating)&tr$education=="High School Diploma",1,tr$trainee_engagement_rating)
+
+tr$trainee_engagement_rating=ifelse(is.na(tr$trainee_engagement_rating)&tr$education=="Matriculation",1,tr$trainee_engagement_rating)
+
+tr$trainee_engagement_rating=ifelse(is.na(tr$trainee_engagement_rating)&tr$education=="Masters",3,tr$trainee_engagement_rating)
+
+
+tr$trainee_engagement_rating=ifelse(is.na(tr$trainee_engagement_rating)&tr$education=="No Qualification",1,tr$trainee_engagement_rating)
+
+tr$trainee_engagement_rating=ifelse(is.na(tr$trainee_engagement_rating)&tr$education=="Bachelors",1,tr$trainee_engagement_rating)
+
+
+
+te$trainee_engagement_rating=ifelse(is.na(te$trainee_engagement_rating)&te$education=="High School Diploma",1,te$trainee_engagement_rating)
+
+te$trainee_engagement_rating=ifelse(is.na(te$trainee_engagement_rating)&te$education=="Matriculation",1,te$trainee_engagement_rating)
+
+te$trainee_engagement_rating=ifelse(is.na(te$trainee_engagement_rating)&te$education=="Masters",3,te$trainee_engagement_rating)
+
+
+te$trainee_engagement_rating=ifelse(is.na(te$trainee_engagement_rating)&te$education=="No Qualification",1,te$trainee_engagement_rating)
+
+te$trainee_engagement_rating=ifelse(is.na(te$trainee_engagement_rating)&te$education=="Bachelors",1,te$trainee_engagement_rating)
+
+
+tr$diff=ifelse(tr$difficulty_level=="intermediate",2,ifelse(tr$difficulty_level=="easy",1,ifelse(tr$difficulty_level=="hard",3,4)))
+te$diff=ifelse(te$difficulty_level=="intermediate",2,ifelse(te$difficulty_level=="easy",1,ifelse(te$difficulty_level=="hard",3,4)))
+
+
+tr$testtype=ifelse(tr$test_type=="online",1,0)
+te$testtype=ifelse(te$test_type=="online",1,0)
+
+
+tr=tr %>% select(-id)
+te=te %>% select(-id)
+
+trn=tr %>% select(-program_id,-test_type,-program_type,-difficulty_level,-education,-is_handicapped)
+tst=te %>% select(-program_id,-test_type,-program_type,-difficulty_level,-education,-is_handicapped)
+
+trn$is_pass=as.factor(trn$is_pass)
+trn=trn %>% select(-gender)
+
+```
+
+```{r}
+####### Splitting into Train and Test Dataset ####### 
+
+train=trn[sample(1:nrow(trn),0.7*nrow(trn)),]
+
+test=trn[sample(1:nrow(trn),0.3*nrow(trn)),]
+
+
+```
+
+
+
+```{r}
+
+######### Applying Random Forest on the Dataset #########
+
+model=randomForest(is_pass~. , data = trn,ntree=260, mtry = 4)
+
+pred=predict(model,test,type = "prob")
+View(pred)
+pred1=data.frame(pred)
+mean(pred1$X0)
+pred1$v3=as.factor(ifelse(pred1$X0>0.31,0,1))
+
+
+######### Model Evaluation using Confusion Matrix on the splitted train dataset provided #########
+
+confusionMatrix(test$is_pass,pred1$v3,positive = "1")
+
+######### Model Evaluation using ROC-AUC curve on the splitted train dataset provided ########
+
+x = roc(test$is_pass,pred[,2])
+plot(x)
+auc(x)
+
+
+######## Applying Model on Test dataset ###########
+
+pred=predict(model,tst,type = "prob")
+pred1=data.frame(pred)
+pred1$v3=as.factor(ifelse(pred1$X0>0.31,0,1))
+
+
+output=data.frame(id=te1$id,is_pass=pred1$v3)
+
+###### Writing csv for final submission #######
+write.csv(output,file="C:\\Users\\Administrator\\Desktop\\hacka\\output.csv",row.names = F)
+
+```
+
